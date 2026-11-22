@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1F4E78">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Keuangan">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>Catatan Keuangan</title>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--ink:#1d2733;--muted:#6b7785;--pri:#1F4E78;--in:#2e7d32;--out:#c62828;--line:#dde3ea}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--pri);color:#fff;padding:16px;padding-top:calc(16px + env(safe-area-inset-top,0px));display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:18px;margin:0}
+#antrian-info{font-size:12px;background:rgba(255,255,255,.2);border-radius:10px;padding:3px 9px}
+main{padding:14px;max-width:520px;margin:0 auto;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
+.card{background:var(--card);border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:14px}
+.card[hidden]{display:none}
+label{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
+.card label:first-child{margin-top:0}
+input,select{width:100%;font-size:17px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-family:inherit;-webkit-appearance:none;appearance:none}
+.tipe{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tipe button{padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:16px;font-weight:600;cursor:pointer;color:var(--muted)}
+.tipe button.aktif.in{background:var(--in);border-color:var(--in);color:#fff}
+.tipe button.aktif.out{background:var(--out);border-color:var(--out);color:#fff}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:16px;padding:6px 12px;font-size:14px;cursor:pointer;color:var(--ink)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.jumlah{font-size:26px;font-weight:700;text-align:right}
+.tombol{width:100%;margin-top:16px;padding:15px;border:0;border-radius:12px;background:var(--pri);color:#fff;font-size:17px;font-weight:700;cursor:pointer}
+.pesan{min-height:20px;font-size:14px;margin-top:10px;text-align:center}
+.pesan.err{color:var(--out)}
+.pesan.ok{color:var(--in)}
+.info-antrian{font-size:13px;color:var(--muted);margin-top:8px;text-align:center}
+#gbtn{display:flex;justify-content:center;margin-top:10px}
+.login-teks{font-size:14px;color:var(--muted);text-align:center;margin:0}
+</style>
+</head>
+<body>
+<header>
+  <h1>Catatan Keuangan</h1>
+  <span id="antrian-info"></span>
+</header>
+<main>
+  <div class="card" id="login" hidden>
+    <p class="login-teks">Login dengan Google agar transaksi bisa dikirim ke catatan. Transaksi yang dicatat sebelum login tetap tersimpan di HP.</p>
+    <div id="gbtn"></div>
+    <div class="pesan" id="pesan-login"></div>
+  </div>
+  <div class="card">
+    <label>Tipe</label>
+    <div class="tipe" id="tipe">
+      <button type="button" data-v="Pengeluaran" class="out aktif">Pengeluaran</button>
+      <button type="button" data-v="Pemasukan" class="in">Pemasukan</button>
+    </div>
+    <label for="kategori">Kategori</label>
+    <select id="kategori"></select>
+    <label for="keterangan">Keterangan</label>
+    <input id="keterangan" list="daftar-ket" placeholder="Ketik atau pilih" autocomplete="off">
+    <datalist id="daftar-ket"></datalist>
+    <div class="chips" id="chips"></div>
+  </div>
+  <div class="card">
+    <div class="row2">
+      <div><label for="tanggal">Tanggal</label><input id="tanggal" type="date"></div>
+      <div><label for="rekening">Rekening</label><select id="rekening"></select></div>
+    </div>
+    <label for="jumlah">Jumlah (Rp)</label>
+    <input id="jumlah" class="jumlah" type="number" inputmode="numeric" min="1" placeholder="0">
+    <label for="catatan">Catatan (opsional)</label>
+    <input id="catatan" autocomplete="off">
+    <button class="tombol" id="simpan" type="button">Simpan</button>
+    <div class="pesan" id="pesan"></div>
+    <div class="info-antrian" id="antrian-teks"></div>
+  </div>
+</main>
+<script src="https://accounts.google.com/gsi/client" async defer onload="initGoogle()"></script>
+<script>
+// ====== ISI DUA BARIS INI ======
+const CONFIG = { url: "https://script.google.com/macros/s/AKfycbzW_8EY17quZDjyHGax4kmTNpFzH7UrCOhfONKdut1f-oF2cju8zN2D3iDuVoBcMJHYrQ/exec", TOKEN: "kopi-sore-7741" };
+// ===============================
+
+const K_DAFTAR = "keu_daftar", K_ANTRIAN = "keu_antrian", K_TOKEN = "keu_token";
+const el = id => document.getElementById(id);
+let daftar = JSON.parse(localStorage.getItem(K_DAFTAR) || "null") || {
+  kategori: { Pengeluaran: ["Makanan","Transportasi","Belanja","Les anak","Lain"],
+              Pemasukan: ["Gaji","Tukin","Investasi","Deposito","Perdin","Lain"] },
+  ket: {}, rekening: ["BNI","Neo","BRI","Jago","Cash"] };
+let antrian = JSON.parse(localStorage.getItem(K_ANTRIAN) || "[]");
+let idToken = localStorage.getItem(K_TOKEN) || "";
+let tipe = "Pengeluaran", sedangKirim = false;
+
+const pad = n => String(n).padStart(2, "0");
+function tanggalHariIni(){ const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate()); }
+function pesan(t, jenis){ const p = el("pesan"); p.textContent = t; p.className = "pesan " + (jenis || ""); }
+function simpanAntrian(){ localStorage.setItem(K_ANTRIAN, JSON.stringify(antrian)); tampilAntrian(); }
+function tampilAntrian(){
+  const n = antrian.length;
+  el("antrian-info").textContent = n ? n + " menunggu" : "";
+  el("antrian-info").style.display = n ? "" : "none";
+  el("antrian-teks").textContent = n ? "Belum terkirim: " + n + " transaksi." : "";
+}
+function isiOpsi(select, list){
+  select.innerHTML = "";
+  list.forEach(x => { const o = document.createElement("option"); o.value = x; o.textContent = x; select.appendChild(o); });
+}
+function isiKategori(){ isiOpsi(el("kategori"), daftar.kategori[tipe] || []); isiKeterangan(); }
+function isiKeterangan(){
+  const list = daftar.ket[tipe + "|" + el("kategori").value] || [];
+  const dl = el("daftar-ket"); dl.innerHTML = "";
+  list.forEach(k => { const o = document.createElement("option"); o.value = k; dl.appendChild(o); });
+  const chips = el("chips"); chips.innerHTML = "";
+  list.slice(0, 8).forEach(k => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = k;
+    b.onclick = () => { el("keterangan").value = k; };
+    chips.appendChild(b);
+  });
+}
+function isiRekening(){ isiOpsi(el("rekening"), daftar.rekening || []); }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+// ---------- Login Google ----------
+function expOf(t){
+  try {
+    let s = t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    s += "=".repeat((4 - s.length % 4) % 4);
+    return JSON.parse(atob(s)).exp * 1000;
+  } catch (e) { return 0; }
+}
+function tokenValid(){ return !!idToken && expOf(idToken) - 60000 > Date.now(); }
+function updateLogin(){
+  const perlu = !tokenValid();
+  el("login").hidden = !perlu;
+  if (perlu && antrian.length) pesan("Login dulu agar " + antrian.length + " transaksi bisa dikirim.", "err");
+}
+function initGoogle(){
+  if (!window.google || CONFIG.clientId.startsWith("PASTE")) return;
+  google.accounts.id.initialize({ client_id: CONFIG.clientId, callback: onCredential, auto_select: false });
+  google.accounts.id.renderButton(el("gbtn"), { theme: "outline", size: "large", text: "signin_with", width: 260 });
+}
+function onCredential(resp){
+  idToken = resp.credential;
+  localStorage.setItem(K_TOKEN, idToken);
+  el("pesan-login").textContent = "";
+  updateLogin();
+  muatDaftar();
+  kirimAntrian();
+}
+function keluarLogin(){ idToken = ""; localStorage.removeItem(K_TOKEN); updateLogin(); }
+
+// ---------- Form ----------
+document.querySelectorAll("#tipe button").forEach(b => {
+  b.onclick = () => {
+    tipe = b.dataset.v;
+    document.querySelectorAll("#tipe button").forEach(x => x.classList.toggle("aktif", x === b));
+    isiKategori();
+  };
+});
+el("kategori").onchange = isiKeterangan;
+
+el("simpan").onclick = () => {
+  const jumlah = Number(el("jumlah").value);
+  if (!el("tanggal").value) return pesan("Isi tanggal dulu.", "err");
+  if (!el("kategori").value) return pesan("Pilih kategori.", "err");
+  if (!(jumlah > 0)) return pesan("Jumlah harus lebih dari 0.", "err");
+  antrian.push({ uid: uid(), tanggal: el("tanggal").value, tipe, kategori: el("kategori").value,
+    keterangan: el("keterangan").value.trim(), jumlah, rekening: el("rekening").value, catatan: el("catatan").value.trim() });
+  simpanAntrian();
+  el("jumlah").value = ""; el("keterangan").value = ""; el("catatan").value = "";
+  pesan("Tersimpan di HP.", "ok");
+  kirimAntrian();
+};
+
+// ---------- Kirim ----------
+async function kirimAntrian(){
+  if (sedangKirim || !antrian.length) return tampilAntrian();
+  if (!navigator.onLine || CONFIG.url.startsWith("PASTE")) return tampilAntrian();
+  if (!tokenValid()) { updateLogin(); return tampilAntrian(); }
+  sedangKirim = true;
+  try {
+    for (const item of [...antrian]) {
+      const res = await fetch(CONFIG.url, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ ...item, idToken })
+      });
+      const j = await res.json();
+      if (!j.ok) {
+        if (j.error === "login") { keluarLogin(); pesan("Sesi login habis. Login lagi untuk mengirim.", "err"); }
+        else pesan("Ditolak server (" + j.error + "). Transaksi tetap di antrian.", "err");
+        break;
+      }
+      antrian = antrian.filter(x => x.uid !== item.uid);
+      simpanAntrian();
+    }
+    if (!antrian.length) pesan("Semua transaksi sudah masuk ke catatan.", "ok");
+  } catch (e) {
+    pesan("Belum bisa terkirim. Akan dicoba lagi saat ada koneksi.", "err");
+  } finally {
+    sedangKirim = false;
+    tampilAntrian();
+    updateLogin();
+  }
+}
+
+async function muatDaftar(){
+  if (!navigator.onLine || !tokenValid() || CONFIG.url.startsWith("PASTE")) return;
+  try {
+    const res = await fetch(CONFIG.url + "?action=lists&idToken=" + encodeURIComponent(idToken));
+    const j = await res.json();
+    if (j.ok) {
+      daftar = { kategori: j.kategori, ket: j.ket, rekening: j.rekening };
+      localStorage.setItem(K_DAFTAR, JSON.stringify(daftar));
+    }
+  } catch (e) { /* pakai daftar yang tersimpan */ }
+  isiRekening(); isiKategori();
+}
+
+el("tanggal").value = tanggalHariIni();
+isiRekening(); isiKategori(); tampilAntrian(); updateLogin();
+if (CONFIG.url.startsWith("PASTE") || CONFIG.clientId.startsWith("PASTE"))
+  pesan("Isi CONFIG (URL dan Client ID) di index.html dulu.", "err");
+else { muatDaftar(); kirimAntrian(); }
+window.addEventListener("online", () => { muatDaftar(); kirimAntrian(); });
+setInterval(() => { updateLogin(); kirimAntrian(); }, 60000);
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
